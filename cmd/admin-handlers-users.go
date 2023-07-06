@@ -229,6 +229,15 @@ func (a adminAPIHandlers) UpdateGroupMembers(w http.ResponseWriter, r *http.Requ
 	if updReq.IsRemove {
 		err = globalIAMSys.RemoveUsersFromGroup(ctx, updReq.Group, updReq.Members)
 	} else {
+		// Check if group already exists
+		if _, gerr := globalIAMSys.GetGroupDescription(updReq.Group); gerr != nil {
+			// If group does not exist, then check if the group has beginning and end space characters
+			// we will reject such group names.
+			if errors.Is(gerr, errNoSuchGroup) && hasSpaceBE(updReq.Group) {
+				writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrAdminResourceInvalidArgument), r.URL)
+				return
+			}
+		}
 		err = globalIAMSys.AddUsersToGroup(ctx, updReq.Group, updReq.Members)
 	}
 	if err != nil {
@@ -410,7 +419,7 @@ func (a adminAPIHandlers) AddUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Not allowed to add a user with same access key as root credential
-	if owner && accessKey == cred.AccessKey {
+	if accessKey == globalActiveCred.AccessKey {
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrAddUserInvalidArgument), r.URL)
 		return
 	}
@@ -427,6 +436,12 @@ func (a adminAPIHandlers) AddUser(w http.ResponseWriter, r *http.Request) {
 		// Incoming access key matches parent user then we should
 		// reject password change requests.
 		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrAddUserInvalidArgument), r.URL)
+		return
+	}
+
+	// Check if accessKey has beginning and end space characters, this only applies to new users.
+	if !exists && hasSpaceBE(accessKey) {
+		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrAdminResourceInvalidArgument), r.URL)
 		return
 	}
 
@@ -521,6 +536,12 @@ func (a adminAPIHandlers) AddServiceAccount(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// service account access key cannot have space characters beginning and end of the string.
+	if hasSpaceBE(createReq.AccessKey) {
+		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrAdminResourceInvalidArgument), r.URL)
+		return
+	}
+
 	var (
 		targetUser   string
 		targetGroups []string
@@ -605,7 +626,6 @@ func (a adminAPIHandlers) AddServiceAccount(w http.ResponseWriter, r *http.Reque
 			ConditionValues: getConditionValues(r, "", cred.AccessKey, claims),
 			IsOwner:         owner,
 			Claims:          claims,
-			DenyOnly:        true,
 		}) {
 			writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrAccessDenied), r.URL)
 			return
@@ -1372,6 +1392,12 @@ func (a adminAPIHandlers) AddCannedPolicy(w http.ResponseWriter, r *http.Request
 
 	vars := mux.Vars(r)
 	policyName := vars["name"]
+
+	// Policy has space characters in begin and end reject such inputs.
+	if hasSpaceBE(policyName) {
+		writeErrorResponseJSON(ctx, w, errorCodes.ToAPIErr(ErrAdminResourceInvalidArgument), r.URL)
+		return
+	}
 
 	// Error out if Content-Length is missing.
 	if r.ContentLength <= 0 {

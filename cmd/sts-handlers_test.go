@@ -324,6 +324,11 @@ func (s *TestSuiteIAM) TestSTSForRoot(c *check) {
 	if !gotBuckets.Equals(shouldHaveBuckets) {
 		c.Fatalf("root user should have access to all buckets")
 	}
+
+	// This must fail.
+	if err := userAdmClient.AddUser(ctx, globalActiveCred.AccessKey, globalActiveCred.SecretKey); err == nil {
+		c.Fatal("AddUser() for root credential must fail via root STS creds")
+	}
 }
 
 // SetUpLDAP - expects to setup an LDAP test server using the test LDAP
@@ -625,6 +630,9 @@ func (s *TestSuiteIAM) TestLDAPSTSServiceAccounts(c *check) {
 
 	// 5. Check that service account can be deleted.
 	c.assertSvcAccDeletion(ctx, s, userAdmClient, value.AccessKeyID, bucket)
+
+	// 6. Check that service account cannot be created for some other user.
+	c.mustNotCreateSvcAccount(ctx, globalActiveCred.AccessKey, userAdmClient)
 }
 
 // In this test, the parent users gets their permissions from a group, rather
@@ -725,6 +733,9 @@ func (s *TestSuiteIAM) TestLDAPSTSServiceAccountsWithGroups(c *check) {
 
 	// 5. Check that service account can be deleted.
 	c.assertSvcAccDeletion(ctx, s, userAdmClient, value.AccessKeyID, bucket)
+
+	// 6. Check that service account cannot be created for some other user.
+	c.mustNotCreateSvcAccount(ctx, globalActiveCred.AccessKey, userAdmClient)
 }
 
 func (s *TestSuiteIAM) TestOpenIDSTS(c *check) {
@@ -979,6 +990,9 @@ func (s *TestSuiteIAM) TestOpenIDServiceAcc(c *check) {
 
 	// 5. Check that service account can be deleted.
 	c.assertSvcAccDeletion(ctx, s, userAdmClient, value.AccessKeyID, bucket)
+
+	// 6. Check that service account cannot be created for some other user.
+	c.mustNotCreateSvcAccount(ctx, globalActiveCred.AccessKey, userAdmClient)
 }
 
 var testAppParams = OpenIDClientAppParams{
